@@ -52,6 +52,49 @@ impl DifyClient {
         client
     }
 
+    /// Retrieve an authenticated client by loading a cached session or logging in
+    pub async fn get_client_with_auth(
+        url: &str,
+        email: &str,
+        password: Option<String>,
+    ) -> Result<Self, String> {
+        // 1. Try to load cached session
+        if let Some(cached) = crate::session::get_cached_session(url, email) {
+            println!(
+                "[*] Found cached session for {} ({}). Checking validity...",
+                email, url
+            );
+            let client = Self::with_session(url, &cached.cookies, &cached.csrf_token);
+            if client.check_session().await {
+                println!("[+] Cached session is valid.");
+                return Ok(client);
+            }
+            println!("[!] Cached session expired or invalid.");
+        }
+
+        // 2. No valid session, authenticate
+        let pwd = match password {
+            Some(p) => p,
+            None => {
+                let prompt = format!("Enter password for Dify Console ({}): ", email);
+                rpassword::prompt_password(prompt)
+                    .map_err(|e| format!("Failed to read password: {}", e))?
+            }
+        };
+
+        let mut client = Self::new(url);
+        let (cookies, csrf_token) = client.login(email, &pwd).await?;
+
+        // 3. Cache session
+        if let Err(e) = crate::session::save_session(url, email, &cookies, &csrf_token) {
+            println!("[!] Warning: Failed to save session to cache: {}", e);
+        } else {
+            println!("[+] Session cached successfully.");
+        }
+
+        Ok(client)
+    }
+
     /// Get current session data
     #[allow(dead_code)]
     pub fn get_session(&self) -> Option<(String, String)> {
