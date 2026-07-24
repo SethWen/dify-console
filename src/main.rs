@@ -21,7 +21,7 @@ enum Commands {
     /// Export applications from Dify WebUI to local DSL files
     Export {
         /// Dify Console Base URL (e.g. http://localhost:8080 or https://dify.example.com)
-        #[arg(short, long, default_value = "http://localhost:8080")]
+        #[arg(short, long)]
         url: String,
 
         /// Dify Console User/Admin Email
@@ -33,7 +33,7 @@ enum Commands {
         password: Option<String>,
 
         /// Output directory to save exported DSL files
-        #[arg(short, long, default_value = "./src/difydsl")]
+        #[arg(short, long, default_value = "difydsl")]
         output: String,
 
         /// Comma-separated list of app modes to export. Available: workflow, advanced-chat, chat, agent-chat, completion. Or 'all' to export all modes.
@@ -44,15 +44,19 @@ enum Commands {
         #[arg(short, long, default_value = "智能投标")]
         tag: Option<String>,
 
-        /// Include secrets/credentials in the exported DSL configuration
-        #[arg(long)]
-        include_secret: bool,
+        /// Environment name for mapping (e.g. dev, preview, production)
+        #[arg(short = 'E', long, default_value = "dev")]
+        env: String,
+
+        /// Path to the app ID mapping JSON file
+        #[arg(long, default_value = "difydsl/app_mapping.json")]
+        map_file: String,
     },
 
     /// Import local DSL files back to Dify WebUI
     Import {
         /// Dify Console Base URL (e.g. http://localhost:8080 or https://dify.example.com)
-        #[arg(short, long, default_value = "http://localhost:8080")]
+        #[arg(short, long)]
         url: String,
 
         /// Dify Console User/Admin Email
@@ -76,27 +80,13 @@ enum Commands {
         app_id: Option<String>,
 
         /// Path to the app ID mapping JSON file (only applicable when batch importing -d)
-        #[arg(short, long)]
-        map_file: Option<String>,
+        #[arg(short, long, default_value = "difydsl/app_mapping.json")]
+        map_file: String,
+
+        /// Environment name for mapping (e.g. dev, preview, production)
+        #[arg(short = 'E', long)]
+        env: String,
     },
-}
-
-#[cfg(unix)]
-fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> std::io::Result<()> {
-    std::os::unix::fs::symlink(original, link)
-}
-
-#[cfg(windows)]
-fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> std::io::Result<()> {
-    std::os::windows::fs::symlink_file(original, link)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(_original: P, _link: Q) -> std::io::Result<()> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "Symlinks are not supported on this platform",
-    ))
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -181,7 +171,8 @@ async fn run(cli: Cli) -> Result<(), String> {
             output,
             modes,
             tag,
-            include_secret,
+            env,
+            map_file,
         } => {
             // Process modes
             let available_modes = vec![
@@ -227,6 +218,19 @@ async fn run(cli: Cli) -> Result<(), String> {
                 }
             }
 
+            // Load mapping file
+            let map_file_buf = PathBuf::from(&map_file);
+
+            let mut mapping: HashMap<String, HashMap<String, String>> = HashMap::new();
+            if map_file_buf.exists() {
+                if let Ok(content) = fs::read_to_string(&map_file_buf) {
+                    mapping = serde_json::from_str(&content).unwrap_or_default();
+                }
+            }
+
+            // Ensure the environment entry exists
+            let env_map = mapping.entry(env.clone()).or_insert_with(HashMap::new);
+
             // Clean output directories
             for mode in &modes_to_export {
                 let folder = get_mode_folder(mode);
@@ -243,6 +247,9 @@ async fn run(cli: Cli) -> Result<(), String> {
                             }
                         }
                     }
+                    // Remove keys from env_map that start with "folder/"
+                    let prefix = format!("{}/", folder);
+                    env_map.retain(|k, _| !k.starts_with(&prefix));
                 }
             }
 
@@ -263,7 +270,7 @@ async fn run(cli: Cli) -> Result<(), String> {
                     app.id
                 );
 
-                match client.export_dsl(&app.id, include_secret).await {
+                match client.export_dsl(&app.id, false).await {
                     Ok(dsl_content) => {
                         let folder = get_mode_folder(&app.mode);
                         let target_dir = Path::new(&output).join(folder);
@@ -272,8 +279,10 @@ async fn run(cli: Cli) -> Result<(), String> {
                             continue;
                         }
 
-                        let filename = format!("{}.yml", app.id);
+                        let safe_name = sanitize_filename(&app.name);
+                        let filename = format!("{}.yml", safe_name);
                         let file_path = target_dir.join(&filename);
+                        let rel_path = format!("{}/{}", folder, filename);
 
                         if let Err(e) = fs::write(&file_path, &dsl_content) {
                             println!("    [!] Failed to write DSL file {:?}: {}", file_path, e);
@@ -281,40 +290,7 @@ async fn run(cli: Cli) -> Result<(), String> {
                         }
                         println!("    [+] Saved: {:?}", file_path);
 
-                        // Create symlink
-                        let safe_name = sanitize_filename(&app.name);
-                        let mut symlink_name = format!("{}.yml", safe_name);
-                        let mut symlink_path = target_dir.join(&symlink_name);
-
-                        let mut counter = 1;
-                        while symlink_path.exists() || symlink_path.is_symlink() {
-                            // Check if it's already a symlink pointing to the same file
-                            if symlink_path.is_symlink() {
-                                if let Ok(target) = fs::read_link(&symlink_path) {
-                                    if target.to_str() == Some(&filename) {
-                                        break;
-                                    }
-                                }
-                            }
-                            symlink_name = format!("{}_{}.yml", safe_name, counter);
-                            symlink_path = target_dir.join(&symlink_name);
-                            counter += 1;
-                        }
-
-                        if symlink_path.exists() || symlink_path.is_symlink() {
-                            let _ = fs::remove_file(&symlink_path);
-                        }
-
-                        match create_symlink(&filename, &symlink_path) {
-                            Ok(_) => println!(
-                                "    [+] Created symlink: {:?} -> {}",
-                                symlink_path, filename
-                            ),
-                            Err(e) => {
-                                println!("    [!] Warning: Failed to create symlink: {:?}", e)
-                            }
-                        }
-
+                        env_map.insert(rel_path, app.id.clone());
                         success_count += 1;
                     }
                     Err(e) => {
@@ -323,6 +299,18 @@ async fn run(cli: Cli) -> Result<(), String> {
                             app.name, app.id, e
                         );
                     }
+                }
+            }
+
+            // Save updated mapping file
+            if let Some(parent) = map_file_buf.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if let Ok(serialized) = serde_json::to_string_pretty(&mapping) {
+                if let Err(e) = fs::write(&map_file_buf, serialized) {
+                    println!("[!] Error writing mapping file: {}", e);
+                } else {
+                    println!("[+] Saved updated mapping file: {:?}", map_file_buf);
                 }
             }
 
@@ -341,6 +329,7 @@ async fn run(cli: Cli) -> Result<(), String> {
             dir,
             app_id,
             map_file,
+            env,
         } => {
             if file.is_none() && dir.is_none() {
                 return Err("At least one of -f/--file or -d/--dir must be specified.".to_string());
@@ -386,23 +375,20 @@ async fn run(cli: Cli) -> Result<(), String> {
                     return Err(format!("Directory not found: {}", dir_path));
                 }
 
-                let map_file_buf = map_file.map(PathBuf::from);
-                let mut mapping = HashMap::new();
+                let map_file_buf = PathBuf::from(&map_file);
+                let mut mapping: HashMap<String, HashMap<String, String>> = HashMap::new();
 
-                if let Some(ref m_path) = map_file_buf {
-                    if m_path.exists() {
-                        match fs::read_to_string(m_path) {
-                            Ok(content) => {
-                                mapping = serde_json::from_str(&content)
-                                    .unwrap_or_else(|_| HashMap::new());
-                                println!("[*] Loaded {} mappings from {:?}", mapping.len(), m_path);
-                            }
-                            Err(e) => {
-                                println!(
-                                    "[!] Warning: Failed to load mapping file {:?}: {}",
-                                    m_path, e
-                                );
-                            }
+                if map_file_buf.exists() {
+                    match fs::read_to_string(&map_file_buf) {
+                        Ok(content) => {
+                            mapping = serde_json::from_str(&content).unwrap_or_default();
+                            println!("[*] Loaded mappings from {:?}", map_file_buf);
+                        }
+                        Err(e) => {
+                            println!(
+                                "[!] Warning: Failed to load mapping file {:?}: {}",
+                                map_file_buf, e
+                            );
                         }
                     }
                 }
@@ -446,23 +432,22 @@ async fn run(cli: Cli) -> Result<(), String> {
                 println!("[*] Found {} files to import.", yml_files.len());
                 let mut success_count = 0;
 
+                // Ensure the environment entry exists
+                let env_map = mapping.entry(env.clone()).or_insert_with(HashMap::new);
+
                 for (idx, path) in yml_files.iter().enumerate() {
-                    let file_name = path
-                        .file_name()
-                        .and_then(|f| f.to_str())
-                        .unwrap_or_default();
-                    let source_app_id = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or_default()
-                        .to_string();
+                    let rel_path = match path.strip_prefix(&dir_path_buf) {
+                        Ok(p) => p.to_string_lossy().into_owned(),
+                        Err(_) => path.to_string_lossy().into_owned(),
+                    };
+                    // Normalize separator to '/'
+                    let rel_path = rel_path.replace('\\', "/");
 
                     println!(
-                        "\n[{}/{}] Processing '{}' (Source App ID: {})...",
+                        "\n[{}/{}] Processing '{}'...",
                         idx + 1,
                         yml_files.len(),
-                        file_name,
-                        source_app_id
+                        rel_path
                     );
 
                     let yaml_content = match fs::read_to_string(path) {
@@ -473,7 +458,7 @@ async fn run(cli: Cli) -> Result<(), String> {
                         }
                     };
 
-                    let target_app_id = mapping.get(&source_app_id).cloned();
+                    let target_app_id = env_map.get(&rel_path).cloned();
                     if target_app_id.is_some() {
                         println!(
                             "    [*] Found target mapping App ID: {}",
@@ -503,27 +488,22 @@ async fn run(cli: Cli) -> Result<(), String> {
 
                             // Update mapping if it was newly created or changed
                             if target_app_id.as_ref() != Some(&res_id) {
-                                mapping.insert(source_app_id.clone(), res_id.clone());
-                                if let Some(ref m_path) = map_file_buf {
-                                    if let Ok(serialized) = serde_json::to_string_pretty(&mapping) {
-                                        if let Err(e) = fs::write(m_path, serialized) {
-                                            println!(
-                                                "        [!] Error writing mapping file: {}",
-                                                e
-                                            );
-                                        } else {
-                                            println!(
-                                                "        [+] Updated mapping file: {} -> {}",
-                                                source_app_id, res_id
-                                            );
-                                        }
-                                    }
-                                }
+                                env_map.insert(rel_path.clone(), res_id.clone());
+                                println!("        [+] Updated mapping: {} -> {}", rel_path, res_id);
                             }
                         }
                         Err(e) => {
-                            println!("    [!] Failed to import '{}': {}", file_name, e);
+                            println!("    [!] Failed to import '{}': {}", rel_path, e);
                         }
+                    }
+                }
+
+                // Write the mapping file once at the end
+                if let Ok(serialized) = serde_json::to_string_pretty(&mapping) {
+                    if let Err(e) = fs::write(&map_file_buf, serialized) {
+                        println!("    [!] Error writing mapping file: {}", e);
+                    } else {
+                        println!("    [+] Saved updated mapping file: {:?}", map_file_buf);
                     }
                 }
 
