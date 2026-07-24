@@ -44,7 +44,7 @@ pub enum Commands {
         modes: String,
 
         /// Filter apps by a specific tag name
-        #[arg(short, long, default_value = "智能投标")]
+        #[arg(short, long)]
         tag: Option<String>,
 
         /// Environment name for mapping (e.g. dev, preview, production)
