@@ -1,6 +1,7 @@
 mod dify_api;
 mod session;
 
+use clap::builder::styling::{AnsiColor, Styles};
 use clap::{Parser, Subcommand};
 use dify_api::DifyClient;
 use std::collections::HashMap;
@@ -8,10 +9,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+fn get_styles() -> Styles {
+    Styles::styled()
+        .header(AnsiColor::Green.on_default().bold())
+        .usage(AnsiColor::Green.on_default().bold())
+        .literal(AnsiColor::Cyan.on_default().bold())
+        .placeholder(AnsiColor::Cyan.on_default())
+}
+
 #[derive(Parser)]
 #[command(name = "dify-console")]
 #[command(version)]
 #[command(about = "Dify Application DSL CLI Tool", long_about = None)]
+#[command(styles = get_styles())]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
