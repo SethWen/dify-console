@@ -1,5 +1,5 @@
-use base64::{prelude::BASE64_STANDARD, Engine};
-use reqwest::header::{HeaderMap, HeaderValue, COOKIE};
+use base64::{Engine, prelude::BASE64_STANDARD};
+use reqwest::header::{COOKIE, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -14,9 +14,10 @@ pub struct AppInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportResult {
-    pub name: String,
-    pub app_id: String,
-    pub mode: String,
+    pub name: Option<String>,
+    pub id: Option<String>,
+    pub app_id: Option<String>,
+    pub mode: Option<String>,
 }
 
 pub struct DifyClient {
@@ -81,7 +82,10 @@ impl DifyClient {
 
         let mut headers = HeaderMap::new();
         if let Some(ref cookies) = self.cookies {
-            headers.insert(COOKIE, HeaderValue::from_str(cookies).map_err(|e| e.to_string())?);
+            headers.insert(
+                COOKIE,
+                HeaderValue::from_str(cookies).map_err(|e| e.to_string())?,
+            );
         }
         if let Some(ref csrf) = self.csrf_token {
             headers.insert(
@@ -105,9 +109,14 @@ impl DifyClient {
             "password": encoded_password,
         });
 
-        println!("[*] Attempting to login to Dify Console at {}...", self.base_url);
+        println!(
+            "[*] Attempting to login to Dify Console at {}...",
+            self.base_url
+        );
 
-        let response = self.client.post(&login_url)
+        let response = self
+            .client
+            .post(&login_url)
             .json(&payload)
             .send()
             .await
@@ -126,7 +135,7 @@ impl DifyClient {
             if let Ok(cookie_str) = cookie_header.to_str() {
                 if let Some(first_part) = cookie_str.split(';').next() {
                     cookie_parts.push(first_part.to_string());
-                    
+
                     let parts: Vec<&str> = first_part.split('=').collect();
                     if parts.len() == 2 {
                         let key = parts[0].trim();
@@ -156,13 +165,21 @@ impl DifyClient {
         if self.cookies.is_none() || self.csrf_token.is_none() {
             return false;
         }
-        
+
         let query = vec![
             ("page".to_string(), "1".to_string()),
             ("limit".to_string(), "1".to_string()),
         ];
-        
-        match self.send_request(reqwest::Method::GET, "/console/api/apps", Some(&query), None).await {
+
+        match self
+            .send_request(
+                reqwest::Method::GET,
+                "/console/api/apps",
+                Some(&query),
+                None,
+            )
+            .await
+        {
             Ok(res) => res.status().is_success(),
             Err(_) => false,
         }
@@ -171,14 +188,24 @@ impl DifyClient {
     /// Fetch tag list from Dify Console and return ID of matching tag name
     pub async fn get_tag_id(&self, tag_name: &str) -> Result<Option<String>, String> {
         let query = vec![("type".to_string(), "app".to_string())];
-        let res = self.send_request(reqwest::Method::GET, "/console/api/tags", Some(&query), None).await?;
-        
+        let res = self
+            .send_request(
+                reqwest::Method::GET,
+                "/console/api/tags",
+                Some(&query),
+                None,
+            )
+            .await?;
+
         if !res.status().is_success() {
             return Err(format!("Failed to fetch tags: HTTP {}", res.status()));
         }
 
-        let val: Value = res.json().await.map_err(|e| format!("Failed to parse tags JSON: {}", e))?;
-        
+        let val: Value = res
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse tags JSON: {}", e))?;
+
         let tags = if let Some(arr) = val.as_array() {
             arr
         } else if let Some(arr) = val.get("data").and_then(|d| d.as_array()) {
@@ -201,7 +228,11 @@ impl DifyClient {
     }
 
     /// List applications and filter them by modes and tags
-    pub async fn list_apps(&self, modes: &[String], tag_name: Option<&str>) -> Result<Vec<AppInfo>, String> {
+    pub async fn list_apps(
+        &self,
+        modes: &[String],
+        tag_name: Option<&str>,
+    ) -> Result<Vec<AppInfo>, String> {
         let mut all_apps = Vec::new();
         let mut page = 1;
         let limit = 50;
@@ -215,10 +246,16 @@ impl DifyClient {
                     tag_id = Some(id);
                 }
                 Ok(None) => {
-                    println!("[!] Warning: Tag '{}' not found on server. Falling back to client-side name match.", t_name);
+                    println!(
+                        "[!] Warning: Tag '{}' not found on server. Falling back to client-side name match.",
+                        t_name
+                    );
                 }
                 Err(e) => {
-                    println!("[!] Warning: Failed to fetch tag ID: {}. Falling back to client-side name match.", e);
+                    println!(
+                        "[!] Warning: Failed to fetch tag ID: {}. Falling back to client-side name match.",
+                        e
+                    );
                 }
             }
         }
@@ -235,21 +272,43 @@ impl DifyClient {
                 query.push(("tag_ids[0]".to_string(), tid.clone()));
             }
 
-            let mut res = self.send_request(reqwest::Method::GET, "/console/api/apps", Some(&query), None).await?;
+            let mut res = self
+                .send_request(
+                    reqwest::Method::GET,
+                    "/console/api/apps",
+                    Some(&query),
+                    None,
+                )
+                .await?;
 
             // Fallback for older servers that don't support server-side tag filtering
             if res.status() == reqwest::StatusCode::BAD_REQUEST && tag_id.is_some() {
                 println!("[!] Server returned 400. Retrying without server-side tag filtering...");
                 query.retain(|(k, _)| k != "tag_ids[0]");
-                res = self.send_request(reqwest::Method::GET, "/console/api/apps", Some(&query), None).await?;
+                res = self
+                    .send_request(
+                        reqwest::Method::GET,
+                        "/console/api/apps",
+                        Some(&query),
+                        None,
+                    )
+                    .await?;
             }
 
             if !res.status().is_success() {
-                return Err(format!("Failed to fetch apps on page {}: HTTP {}", page, res.status()));
+                return Err(format!(
+                    "Failed to fetch apps on page {}: HTTP {}",
+                    page,
+                    res.status()
+                ));
             }
 
-            let val: Value = res.json().await.map_err(|e| format!("Failed to parse apps page JSON: {}", e))?;
-            let apps_list = val.get("data")
+            let val: Value = res
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse apps page JSON: {}", e))?;
+            let apps_list = val
+                .get("data")
                 .and_then(|d| d.as_array())
                 .ok_or_else(|| "Missing 'data' field in apps response".to_string())?;
 
@@ -257,11 +316,13 @@ impl DifyClient {
                 break;
             }
 
-            let page_apps: Vec<AppInfo> = serde_json::from_value(Value::Array(apps_list.clone()))
-                .map_err(|e| format!("Failed to deserialize app list: {}", e))?;
+            let page_apps: Vec<AppInfo> =
+                serde_json::from_value(Value::Array(apps_list.clone()))
+                    .map_err(|e| format!("Failed to deserialize app list: {}", e))?;
 
             // Filter by modes
-            let mut filtered: Vec<AppInfo> = page_apps.into_iter()
+            let mut filtered: Vec<AppInfo> = page_apps
+                .into_iter()
                 .filter(|app| modes.contains(&app.mode))
                 .collect();
 
@@ -294,10 +355,18 @@ impl DifyClient {
                 });
             }
 
-            println!("    - Page {}: fetched {} apps, found {} matching criteria.", page, apps_list.len(), filtered.len());
+            println!(
+                "    - Page {}: fetched {} apps, found {} matching criteria.",
+                page,
+                apps_list.len(),
+                filtered.len()
+            );
             all_apps.extend(filtered);
 
-            let has_more = val.get("has_more").and_then(|h| h.as_bool()).unwrap_or(false);
+            let has_more = val
+                .get("has_more")
+                .and_then(|h| h.as_bool())
+                .unwrap_or(false);
             if !has_more || apps_list.len() < limit {
                 break;
             }
@@ -312,15 +381,28 @@ impl DifyClient {
     /// Export DSL for a single app ID
     pub async fn export_dsl(&self, app_id: &str, include_secret: bool) -> Result<String, String> {
         let path = format!("/console/api/apps/{}/export", app_id);
-        let query = vec![("include_secret".to_string(), if include_secret { "true".to_string() } else { "false".to_string() })];
+        let query = vec![(
+            "include_secret".to_string(),
+            if include_secret {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            },
+        )];
 
-        let res = self.send_request(reqwest::Method::GET, &path, Some(&query), None).await?;
+        let res = self
+            .send_request(reqwest::Method::GET, &path, Some(&query), None)
+            .await?;
         if !res.status().is_success() {
             return Err(format!("HTTP {}", res.status()));
         }
 
-        let val: Value = res.json().await.map_err(|e| format!("Failed to parse export JSON: {}", e))?;
-        let dsl_content = val.get("data")
+        let val: Value = res
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse export JSON: {}", e))?;
+        let dsl_content = val
+            .get("data")
             .and_then(|d| d.as_str())
             .ok_or_else(|| "Missing 'data' field in export response".to_string())?;
 
@@ -328,7 +410,11 @@ impl DifyClient {
     }
 
     /// Import or update DSL for an app ID
-    pub async fn import_dsl(&self, yaml_content: &str, target_app_id: Option<&str>) -> Result<ImportResult, String> {
+    pub async fn import_dsl(
+        &self,
+        yaml_content: &str,
+        target_app_id: Option<&str>,
+    ) -> Result<ImportResult, String> {
         let mut payload = serde_json::json!({
             "mode": "yaml-content",
             "yaml_content": yaml_content,
@@ -340,14 +426,27 @@ impl DifyClient {
             }
         }
 
-        let res = self.send_request(reqwest::Method::POST, "/console/api/apps/imports", None, Some(payload)).await?;
-        if !res.status().is_success() {
-            let status = res.status();
-            let text = res.text().await.unwrap_or_default();
+        let res = self
+            .send_request(
+                reqwest::Method::POST,
+                "/console/api/apps/imports",
+                None,
+                Some(payload),
+            )
+            .await?;
+        let status = res.status();
+        let text = res.text().await.unwrap_or_default();
+
+        if !status.is_success() {
             return Err(format!("HTTP {}: {}", status, text));
         }
 
-        let result: ImportResult = res.json().await.map_err(|e| format!("Failed to parse import response: {}", e))?;
+        let result: ImportResult = serde_json::from_str(&text).map_err(|e| {
+            format!(
+                "Failed to parse import response: {}. Raw response: {}",
+                e, text
+            )
+        })?;
         Ok(result)
     }
 }

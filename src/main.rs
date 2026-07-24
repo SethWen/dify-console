@@ -127,7 +127,10 @@ async fn get_client_with_auth(
 ) -> Result<DifyClient, String> {
     // 1. Try to load cached session
     if let Some(cached) = session::get_cached_session(url, email) {
-        println!("[*] Found cached session for {} ({}). Checking validity...", email, url);
+        println!(
+            "[*] Found cached session for {} ({}). Checking validity...",
+            email, url
+        );
         let client = DifyClient::with_session(url, &cached.cookies, &cached.csrf_token);
         if client.check_session().await {
             println!("[+] Cached session is valid.");
@@ -181,12 +184,21 @@ async fn run(cli: Cli) -> Result<(), String> {
             include_secret,
         } => {
             // Process modes
-            let available_modes = vec!["workflow", "advanced-chat", "chat", "agent-chat", "completion"];
+            let available_modes = vec![
+                "workflow",
+                "advanced-chat",
+                "chat",
+                "agent-chat",
+                "completion",
+            ];
             let modes_to_export: Vec<String> = if modes.to_lowercase() == "all" {
                 available_modes.into_iter().map(String::from).collect()
             } else {
                 let parts: Vec<String> = modes.split(',').map(|m| m.trim().to_string()).collect();
-                let invalid: Vec<&String> = parts.iter().filter(|m| !available_modes.contains(&m.as_str())).collect();
+                let invalid: Vec<&String> = parts
+                    .iter()
+                    .filter(|m| !available_modes.contains(&m.as_str()))
+                    .collect();
                 if !invalid.is_empty() {
                     let invalid_str: Vec<&str> = invalid.iter().map(|s| s.as_str()).collect();
                     return Err(format!(
@@ -294,14 +306,22 @@ async fn run(cli: Cli) -> Result<(), String> {
                         }
 
                         match create_symlink(&filename, &symlink_path) {
-                            Ok(_) => println!("    [+] Created symlink: {:?} -> {}", symlink_path, filename),
-                            Err(e) => println!("    [!] Warning: Failed to create symlink: {:?}", e),
+                            Ok(_) => println!(
+                                "    [+] Created symlink: {:?} -> {}",
+                                symlink_path, filename
+                            ),
+                            Err(e) => {
+                                println!("    [!] Warning: Failed to create symlink: {:?}", e)
+                            }
                         }
 
                         success_count += 1;
                     }
                     Err(e) => {
-                        println!("    [!] Error exporting '{}' (ID: {}): {}", app.name, app.id, e);
+                        println!(
+                            "    [!] Error exporting '{}' (ID: {}): {}",
+                            app.name, app.id, e
+                        );
                     }
                 }
             }
@@ -336,16 +356,25 @@ async fn run(cli: Cli) -> Result<(), String> {
                     return Err(format!("File not found: {}", file_path));
                 }
 
-                println!("[*] Importing DSL to create/update app (Target App ID: {:?})...", app_id);
+                println!(
+                    "[*] Importing DSL to create/update app (Target App ID: {:?})...",
+                    app_id
+                );
                 let yaml_content = fs::read_to_string(&file_path)
                     .map_err(|e| format!("Failed to read file: {}", e))?;
 
                 match client.import_dsl(&yaml_content, app_id.as_deref()).await {
                     Ok(result) => {
+                        let res_name = result.name.unwrap_or_else(|| "Unknown".to_string());
+                        let res_id = result
+                            .app_id
+                            .or(result.id)
+                            .unwrap_or_else(|| "Unknown".to_string());
+                        let res_mode = result.mode.unwrap_or_else(|| "Unknown".to_string());
                         println!("[+] Import successful!");
-                        println!("    - App Name: {}", result.name);
-                        println!("    - App ID: {}", result.app_id);
-                        println!("    - Mode: {}", result.mode);
+                        println!("    - App Name: {}", res_name);
+                        println!("    - App ID: {}", res_id);
+                        println!("    - Mode: {}", res_mode);
                     }
                     Err(e) => {
                         return Err(format!("Import failed: {}", e));
@@ -369,7 +398,10 @@ async fn run(cli: Cli) -> Result<(), String> {
                                 println!("[*] Loaded {} mappings from {:?}", mapping.len(), m_path);
                             }
                             Err(e) => {
-                                println!("[!] Warning: Failed to load mapping file {:?}: {}", m_path, e);
+                                println!(
+                                    "[!] Warning: Failed to load mapping file {:?}: {}",
+                                    m_path, e
+                                );
                             }
                         }
                     }
@@ -377,10 +409,13 @@ async fn run(cli: Cli) -> Result<(), String> {
 
                 // Gather non-symlink yml/yaml files
                 let mut yml_files = Vec::new();
-                for entry in WalkDir::new(&dir_path_buf).into_iter().filter_map(|e| e.ok()) {
+                for entry in WalkDir::new(&dir_path_buf)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                {
                     let path = entry.path();
                     let metadata = entry.path().symlink_metadata();
-                    
+
                     let is_symlink = match metadata {
                         Ok(meta) => meta.file_type().is_symlink(),
                         Err(_) => false,
@@ -400,7 +435,10 @@ async fn run(cli: Cli) -> Result<(), String> {
                 }
 
                 if yml_files.is_empty() {
-                    println!("[*] No DSL files found in {:?} (excluding symlinks).", dir_path_buf);
+                    println!(
+                        "[*] No DSL files found in {:?} (excluding symlinks).",
+                        dir_path_buf
+                    );
                     return Ok(());
                 }
 
@@ -409,8 +447,15 @@ async fn run(cli: Cli) -> Result<(), String> {
                 let mut success_count = 0;
 
                 for (idx, path) in yml_files.iter().enumerate() {
-                    let file_name = path.file_name().and_then(|f| f.to_str()).unwrap_or_default();
-                    let source_app_id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
+                    let file_name = path
+                        .file_name()
+                        .and_then(|f| f.to_str())
+                        .unwrap_or_default();
+                    let source_app_id = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or_default()
+                        .to_string();
 
                     println!(
                         "\n[{}/{}] Processing '{}' (Source App ID: {})...",
@@ -430,30 +475,46 @@ async fn run(cli: Cli) -> Result<(), String> {
 
                     let target_app_id = mapping.get(&source_app_id).cloned();
                     if target_app_id.is_some() {
-                        println!("    [*] Found target mapping App ID: {}", target_app_id.as_ref().unwrap());
+                        println!(
+                            "    [*] Found target mapping App ID: {}",
+                            target_app_id.as_ref().unwrap()
+                        );
                     } else {
                         println!("    [*] No target mapping. Importing as a new app.");
                     }
 
-                    match client.import_dsl(&yaml_content, target_app_id.as_deref()).await {
+                    match client
+                        .import_dsl(&yaml_content, target_app_id.as_deref())
+                        .await
+                    {
                         Ok(result) => {
+                            let res_name = result.name.unwrap_or_else(|| "Unknown".to_string());
+                            let res_id = result
+                                .app_id
+                                .or(result.id)
+                                .unwrap_or_else(|| "Unknown".to_string());
+                            let res_mode = result.mode.unwrap_or_else(|| "Unknown".to_string());
+
                             success_count += 1;
                             println!("    [+] Import successful!");
-                            println!("        - App Name: {}", result.name);
-                            println!("        - App ID: {}", result.app_id);
-                            println!("        - Mode: {}", result.mode);
+                            println!("        - App Name: {}", res_name);
+                            println!("        - App ID: {}", res_id);
+                            println!("        - Mode: {}", res_mode);
 
                             // Update mapping if it was newly created or changed
-                            if target_app_id.as_ref() != Some(&result.app_id) {
-                                mapping.insert(source_app_id.clone(), result.app_id.clone());
+                            if target_app_id.as_ref() != Some(&res_id) {
+                                mapping.insert(source_app_id.clone(), res_id.clone());
                                 if let Some(ref m_path) = map_file_buf {
                                     if let Ok(serialized) = serde_json::to_string_pretty(&mapping) {
                                         if let Err(e) = fs::write(m_path, serialized) {
-                                            println!("        [!] Error writing mapping file: {}", e);
+                                            println!(
+                                                "        [!] Error writing mapping file: {}",
+                                                e
+                                            );
                                         } else {
                                             println!(
                                                 "        [+] Updated mapping file: {} -> {}",
-                                                source_app_id, result.app_id
+                                                source_app_id, res_id
                                             );
                                         }
                                     }

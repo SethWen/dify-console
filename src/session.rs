@@ -74,7 +74,7 @@ pub fn save_session(url: &str, email: &str, cookies: &str, csrf_token: &str) -> 
     map.insert(key, session);
 
     let path = get_cache_file_path().ok_or("Failed to locate config directory")?;
-    
+
     // Ensure directory exists
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {}", e))?;
@@ -83,8 +83,8 @@ pub fn save_session(url: &str, email: &str, cookies: &str, csrf_token: &str) -> 
     let json_content = serde_json::to_string_pretty(&map)
         .map_err(|e| format!("Failed to serialize session mapping: {}", e))?;
 
-    let mut file = File::create(&path)
-        .map_err(|e| format!("Failed to create session cache file: {}", e))?;
+    let mut file =
+        File::create(&path).map_err(|e| format!("Failed to create session cache file: {}", e))?;
 
     file.write_all(json_content.as_bytes())
         .map_err(|e| format!("Failed to write session cache: {}", e))?;
