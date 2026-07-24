@@ -224,9 +224,10 @@ async fn run(cli: Cli) -> Result<(), String> {
 
             let mut mapping: HashMap<String, HashMap<String, String>> = HashMap::new();
             if map_file_buf.exists()
-                && let Ok(content) = fs::read_to_string(&map_file_buf) {
-                    mapping = serde_json::from_str(&content).unwrap_or_default();
-                }
+                && let Ok(content) = fs::read_to_string(&map_file_buf)
+            {
+                mapping = serde_json::from_str(&content).unwrap_or_default();
+            }
 
             // Ensure the environment entry exists
             let env_map = mapping.entry(env.clone()).or_default();
@@ -413,9 +414,10 @@ async fn run(cli: Cli) -> Result<(), String> {
 
                     if path.is_file()
                         && let Some(ext) = path.extension().and_then(|e| e.to_str())
-                            && (ext == "yml" || ext == "yaml") {
-                                yml_files.push(path.to_path_buf());
-                            }
+                        && (ext == "yml" || ext == "yaml")
+                    {
+                        yml_files.push(path.to_path_buf());
+                    }
                 }
 
                 if yml_files.is_empty() {
@@ -457,11 +459,8 @@ async fn run(cli: Cli) -> Result<(), String> {
                     };
 
                     let target_app_id = env_map.get(&rel_path).cloned();
-                    if target_app_id.is_some() {
-                        println!(
-                            "    [*] Found target mapping App ID: {}",
-                            target_app_id.as_ref().unwrap()
-                        );
+                    if let Some(target_app_id) = &target_app_id {
+                        println!("    [*] Found target mapping App ID: {}", target_app_id);
                     } else {
                         println!("    [*] No target mapping. Importing as a new app.");
                     }
