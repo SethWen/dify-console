@@ -132,8 +132,8 @@ impl DifyClient {
         let mut cookie_parts = Vec::new();
         let mut csrf_token = None;
         for cookie_header in response.headers().get_all(reqwest::header::SET_COOKIE) {
-            if let Ok(cookie_str) = cookie_header.to_str() {
-                if let Some(first_part) = cookie_str.split(';').next() {
+            if let Ok(cookie_str) = cookie_header.to_str()
+                && let Some(first_part) = cookie_str.split(';').next() {
                     cookie_parts.push(first_part.to_string());
 
                     let parts: Vec<&str> = first_part.split('=').collect();
@@ -145,7 +145,6 @@ impl DifyClient {
                         }
                     }
                 }
-            }
         }
 
         let cookies = cookie_parts.join("; ");
@@ -215,13 +214,11 @@ impl DifyClient {
         };
 
         for tag in tags {
-            if let Some(name) = tag.get("name").and_then(|n| n.as_str()) {
-                if name == tag_name {
-                    if let Some(id) = tag.get("id").and_then(|i| i.as_str()) {
+            if let Some(name) = tag.get("name").and_then(|n| n.as_str())
+                && name == tag_name
+                    && let Some(id) = tag.get("id").and_then(|i| i.as_str()) {
                         return Ok(Some(id.to_string()));
                     }
-                }
-            }
         }
 
         Ok(None)
@@ -329,28 +326,24 @@ impl DifyClient {
             // Filter by tag if tag_name is specified
             if let Some(t_name) = tag_name {
                 filtered.retain(|app| {
-                    if let Some(ref tags_val) = app.tags {
-                        if let Some(tags_arr) = tags_val.as_array() {
+                    if let Some(ref tags_val) = app.tags
+                        && let Some(tags_arr) = tags_val.as_array() {
                             for t in tags_arr {
                                 if let Some(name) = t.get("name").and_then(|n| n.as_str()) {
                                     if name == t_name {
                                         return true;
                                     }
-                                } else if let Some(name) = t.as_str() {
-                                    if name == t_name {
+                                } else if let Some(name) = t.as_str()
+                                    && name == t_name {
                                         return true;
                                     }
-                                }
-                                if let Some(id) = t.get("id").and_then(|i| i.as_str()) {
-                                    if let Some(ref tid) = tag_id {
-                                        if id == tid {
+                                if let Some(id) = t.get("id").and_then(|i| i.as_str())
+                                    && let Some(ref tid) = tag_id
+                                        && id == tid {
                                             return true;
                                         }
-                                    }
-                                }
                             }
                         }
-                    }
                     false
                 });
             }
@@ -420,11 +413,10 @@ impl DifyClient {
             "yaml_content": yaml_content,
         });
 
-        if let Some(id) = target_app_id {
-            if let Some(obj) = payload.as_object_mut() {
+        if let Some(id) = target_app_id
+            && let Some(obj) = payload.as_object_mut() {
                 obj.insert("app_id".to_string(), Value::String(id.to_string()));
             }
-        }
 
         let res = self
             .send_request(

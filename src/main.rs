@@ -10,6 +10,7 @@ use walkdir::WalkDir;
 
 #[derive(Parser)]
 #[command(name = "dify-console")]
+#[command(version)]
 #[command(about = "Dify Application DSL CLI Tool", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -222,14 +223,13 @@ async fn run(cli: Cli) -> Result<(), String> {
             let map_file_buf = PathBuf::from(&map_file);
 
             let mut mapping: HashMap<String, HashMap<String, String>> = HashMap::new();
-            if map_file_buf.exists() {
-                if let Ok(content) = fs::read_to_string(&map_file_buf) {
+            if map_file_buf.exists()
+                && let Ok(content) = fs::read_to_string(&map_file_buf) {
                     mapping = serde_json::from_str(&content).unwrap_or_default();
                 }
-            }
 
             // Ensure the environment entry exists
-            let env_map = mapping.entry(env.clone()).or_insert_with(HashMap::new);
+            let env_map = mapping.entry(env.clone()).or_default();
 
             // Clean output directories
             for mode in &modes_to_export {
@@ -411,13 +411,11 @@ async fn run(cli: Cli) -> Result<(), String> {
                         continue;
                     }
 
-                    if path.is_file() {
-                        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                            if ext == "yml" || ext == "yaml" {
+                    if path.is_file()
+                        && let Some(ext) = path.extension().and_then(|e| e.to_str())
+                            && (ext == "yml" || ext == "yaml") {
                                 yml_files.push(path.to_path_buf());
                             }
-                        }
-                    }
                 }
 
                 if yml_files.is_empty() {
@@ -433,7 +431,7 @@ async fn run(cli: Cli) -> Result<(), String> {
                 let mut success_count = 0;
 
                 // Ensure the environment entry exists
-                let env_map = mapping.entry(env.clone()).or_insert_with(HashMap::new);
+                let env_map = mapping.entry(env.clone()).or_default();
 
                 for (idx, path) in yml_files.iter().enumerate() {
                     let rel_path = match path.strip_prefix(&dir_path_buf) {
