@@ -52,6 +52,49 @@ impl DifyClient {
         client
     }
 
+    /// Retrieve an authenticated client by loading a cached session or logging in
+    pub async fn get_client_with_auth(
+        url: &str,
+        email: &str,
+        password: Option<String>,
+    ) -> Result<Self, String> {
+        // 1. Try to load cached session
+        if let Some(cached) = crate::session::get_cached_session(url, email) {
+            println!(
+                "[*] Found cached session for {} ({}). Checking validity...",
+                email, url
+            );
+            let client = Self::with_session(url, &cached.cookies, &cached.csrf_token);
+            if client.check_session().await {
+                println!("[+] Cached session is valid.");
+                return Ok(client);
+            }
+            println!("[!] Cached session expired or invalid.");
+        }
+
+        // 2. No valid session, authenticate
+        let pwd = match password {
+            Some(p) => p,
+            None => {
+                let prompt = format!("Enter password for Dify Console ({}): ", email);
+                rpassword::prompt_password(prompt)
+                    .map_err(|e| format!("Failed to read password: {}", e))?
+            }
+        };
+
+        let mut client = Self::new(url);
+        let (cookies, csrf_token) = client.login(email, &pwd).await?;
+
+        // 3. Cache session
+        if let Err(e) = crate::session::save_session(url, email, &cookies, &csrf_token) {
+            println!("[!] Warning: Failed to save session to cache: {}", e);
+        } else {
+            println!("[+] Session cached successfully.");
+        }
+
+        Ok(client)
+    }
+
     /// Get current session data
     #[allow(dead_code)]
     pub fn get_session(&self) -> Option<(String, String)> {
@@ -132,17 +175,17 @@ impl DifyClient {
         let mut cookie_parts = Vec::new();
         let mut csrf_token = None;
         for cookie_header in response.headers().get_all(reqwest::header::SET_COOKIE) {
-            if let Ok(cookie_str) = cookie_header.to_str() {
-                if let Some(first_part) = cookie_str.split(';').next() {
-                    cookie_parts.push(first_part.to_string());
+            if let Ok(cookie_str) = cookie_header.to_str()
+                && let Some(first_part) = cookie_str.split(';').next()
+            {
+                cookie_parts.push(first_part.to_string());
 
-                    let parts: Vec<&str> = first_part.split('=').collect();
-                    if parts.len() == 2 {
-                        let key = parts[0].trim();
-                        let val = parts[1].trim();
-                        if key == "csrf_token" || key == "__Host-csrf_token" {
-                            csrf_token = Some(val.to_string());
-                        }
+                let parts: Vec<&str> = first_part.split('=').collect();
+                if parts.len() == 2 {
+                    let key = parts[0].trim();
+                    let val = parts[1].trim();
+                    if key == "csrf_token" || key == "__Host-csrf_token" {
+                        csrf_token = Some(val.to_string());
                     }
                 }
             }
@@ -215,12 +258,11 @@ impl DifyClient {
         };
 
         for tag in tags {
-            if let Some(name) = tag.get("name").and_then(|n| n.as_str()) {
-                if name == tag_name {
-                    if let Some(id) = tag.get("id").and_then(|i| i.as_str()) {
-                        return Ok(Some(id.to_string()));
-                    }
-                }
+            if let Some(name) = tag.get("name").and_then(|n| n.as_str())
+                && name == tag_name
+                && let Some(id) = tag.get("id").and_then(|i| i.as_str())
+            {
+                return Ok(Some(id.to_string()));
             }
         }
 
@@ -329,25 +371,24 @@ impl DifyClient {
             // Filter by tag if tag_name is specified
             if let Some(t_name) = tag_name {
                 filtered.retain(|app| {
-                    if let Some(ref tags_val) = app.tags {
-                        if let Some(tags_arr) = tags_val.as_array() {
-                            for t in tags_arr {
-                                if let Some(name) = t.get("name").and_then(|n| n.as_str()) {
-                                    if name == t_name {
-                                        return true;
-                                    }
-                                } else if let Some(name) = t.as_str() {
-                                    if name == t_name {
-                                        return true;
-                                    }
+                    if let Some(ref tags_val) = app.tags
+                        && let Some(tags_arr) = tags_val.as_array()
+                    {
+                        for t in tags_arr {
+                            if let Some(name) = t.get("name").and_then(|n| n.as_str()) {
+                                if name == t_name {
+                                    return true;
                                 }
-                                if let Some(id) = t.get("id").and_then(|i| i.as_str()) {
-                                    if let Some(ref tid) = tag_id {
-                                        if id == tid {
-                                            return true;
-                                        }
-                                    }
-                                }
+                            } else if let Some(name) = t.as_str()
+                                && name == t_name
+                            {
+                                return true;
+                            }
+                            if let Some(id) = t.get("id").and_then(|i| i.as_str())
+                                && let Some(ref tid) = tag_id
+                                && id == tid
+                            {
+                                return true;
                             }
                         }
                     }
@@ -420,10 +461,10 @@ impl DifyClient {
             "yaml_content": yaml_content,
         });
 
-        if let Some(id) = target_app_id {
-            if let Some(obj) = payload.as_object_mut() {
-                obj.insert("app_id".to_string(), Value::String(id.to_string()));
-            }
+        if let Some(id) = target_app_id
+            && let Some(obj) = payload.as_object_mut()
+        {
+            obj.insert("app_id".to_string(), Value::String(id.to_string()));
         }
 
         let res = self
