@@ -1,9 +1,0 @@
-{
-  "tools": {
-    "core": [
-      "run_shell_command(uv run ruff)",
-      "run_shell_command(uv run pyright)",
-      "run_shell_command(uv run pytest)"
-    ]
-  }
-}
