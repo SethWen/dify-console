@@ -24,6 +24,12 @@ pub async fn run(cli: Cli) -> Result<(), String> {
             app_id,
             map_file,
             env,
-        } => import::run(url, email, password, file, dir, app_id, map_file, env).await,
+            publish,
+        } => {
+            import::run(
+                url, email, password, file, dir, app_id, map_file, env, publish,
+            )
+            .await
+        }
     }
 }

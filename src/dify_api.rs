@@ -490,4 +490,22 @@ impl DifyClient {
         })?;
         Ok(result)
     }
+
+    /// Publish a workflow/chatflow app
+    pub async fn publish_workflow(&self, app_id: &str) -> Result<(), String> {
+        let path = format!("/console/api/apps/{}/workflows/publish", app_id);
+        let payload = serde_json::json!({});
+
+        let res = self
+            .send_request(reqwest::Method::POST, &path, None, Some(payload))
+            .await?;
+        let status = res.status();
+        let text = res.text().await.unwrap_or_default();
+
+        if !status.is_success() {
+            return Err(format!("HTTP {}: {}", status, text));
+        }
+
+        Ok(())
+    }
 }
