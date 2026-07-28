@@ -61,16 +61,22 @@ pub async fn run(
 
     // Load mapping file
     let map_file_buf = PathBuf::from(&map_file);
+    let mut mapping: HashMap<String, crate::utils::EnvConfig> = HashMap::new();
 
-    let mut mapping: HashMap<String, HashMap<String, String>> = HashMap::new();
-    if map_file_buf.exists()
-        && let Ok(content) = fs::read_to_string(&map_file_buf)
-    {
-        mapping = serde_json::from_str(&content).unwrap_or_default();
+    if map_file_buf.exists() {
+        let content = fs::read_to_string(&map_file_buf)
+            .map_err(|e| format!("Failed to read mapping file {:?}: {}", map_file_buf, e))?;
+        mapping = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse mapping JSON in {:?}: {}", map_file_buf, e))?;
     }
 
     // Ensure the environment entry exists
-    let env_map = mapping.entry(env.clone()).or_default();
+    let env_config = mapping
+        .entry(env.clone())
+        .or_insert_with(|| crate::utils::EnvConfig {
+            apps: HashMap::new(),
+            replace_rules: None,
+        });
 
     // Clean output directories
     for mode in &modes_to_export {
@@ -88,9 +94,9 @@ pub async fn run(
                     }
                 }
             }
-            // Remove keys from env_map that start with "folder/"
+            // Remove keys from env_config.apps that start with "folder/"
             let prefix = format!("{}/", folder);
-            env_map.retain(|k, _| !k.starts_with(&prefix));
+            env_config.apps.retain(|k, _| !k.starts_with(&prefix));
         }
     }
 
@@ -131,7 +137,7 @@ pub async fn run(
                 }
                 println!("    [+] Saved: {:?}", file_path);
 
-                env_map.insert(rel_path, app.id.clone());
+                env_config.apps.insert(rel_path, app.id.clone());
                 success_count += 1;
             }
             Err(e) => {
