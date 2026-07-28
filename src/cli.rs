@@ -89,5 +89,9 @@ pub enum Commands {
         /// Environment name for mapping (e.g. dev, preview, production)
         #[arg(short = 'E', long)]
         env: String,
+
+        /// Publish the app automatically after a successful import
+        #[arg(short = 'P', long)]
+        publish: bool,
     },
 }

@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     url: String,
     email: String,
@@ -13,6 +14,7 @@ pub async fn run(
     app_id: Option<String>,
     map_file: String,
     env: String,
+    publish: bool,
 ) -> Result<(), String> {
     if file.is_none() && dir.is_none() {
         return Err("At least one of -f/--file or -d/--dir must be specified.".to_string());
@@ -37,16 +39,39 @@ pub async fn run(
 
         match client.import_dsl(&yaml_content, app_id.as_deref()).await {
             Ok(result) => {
-                let res_name = result.name.unwrap_or_else(|| "Unknown".to_string());
+                let (fallback_name, fallback_mode) =
+                    crate::utils::parse_dsl_metadata(&yaml_content);
+                let res_name = result
+                    .name
+                    .or(fallback_name)
+                    .unwrap_or_else(|| "Unknown".to_string());
                 let res_id = result
                     .app_id
                     .or(result.id)
                     .unwrap_or_else(|| "Unknown".to_string());
-                let res_mode = result.mode.unwrap_or_else(|| "Unknown".to_string());
+                let res_mode = result
+                    .mode
+                    .or(fallback_mode)
+                    .unwrap_or_else(|| "Unknown".to_string());
                 println!("[+] Import successful!");
                 println!("    - App Name: {}", res_name);
                 println!("    - App ID: {}", res_id);
                 println!("    - Mode: {}", res_mode);
+
+                if publish {
+                    if res_mode == "workflow" || res_mode == "advanced-chat" {
+                        println!("[*] Publishing app {}...", res_id);
+                        if let Err(e) = client.publish_workflow(&res_id).await {
+                            return Err(format!("Publish failed: {}", e));
+                        }
+                        println!("[+] Published successfully!");
+                    } else {
+                        println!(
+                            "[*] For non-workflow app (mode: {}), skipped automatic publishing.",
+                            res_mode
+                        );
+                    }
+                }
             }
             Err(e) => {
                 return Err(format!("Import failed: {}", e));
@@ -152,12 +177,20 @@ pub async fn run(
                 .await
             {
                 Ok(result) => {
-                    let res_name = result.name.unwrap_or_else(|| "Unknown".to_string());
+                    let (fallback_name, fallback_mode) =
+                        crate::utils::parse_dsl_metadata(&yaml_content);
+                    let res_name = result
+                        .name
+                        .or(fallback_name)
+                        .unwrap_or_else(|| "Unknown".to_string());
                     let res_id = result
                         .app_id
                         .or(result.id)
                         .unwrap_or_else(|| "Unknown".to_string());
-                    let res_mode = result.mode.unwrap_or_else(|| "Unknown".to_string());
+                    let res_mode = result
+                        .mode
+                        .or(fallback_mode)
+                        .unwrap_or_else(|| "Unknown".to_string());
 
                     success_count += 1;
                     println!("    [+] Import successful!");
@@ -169,6 +202,23 @@ pub async fn run(
                     if target_app_id.as_ref() != Some(&res_id) {
                         env_map.insert(rel_path.clone(), res_id.clone());
                         println!("        [+] Updated mapping: {} -> {}", rel_path, res_id);
+                    }
+
+                    if publish {
+                        if res_mode == "workflow" || res_mode == "advanced-chat" {
+                            println!("        [*] Publishing app {}...", res_id);
+                            match client.publish_workflow(&res_id).await {
+                                Ok(_) => println!("        [+] Published successfully!"),
+                                Err(e) => {
+                                    println!("        [!] Publish failed for {}: {}", res_id, e)
+                                }
+                            }
+                        } else {
+                            println!(
+                                "        [*] For non-workflow app (mode: {}), skipped automatic publishing.",
+                                res_mode
+                            );
+                        }
                     }
                 }
                 Err(e) => {

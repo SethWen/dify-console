@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     url: String,
     email: String,
