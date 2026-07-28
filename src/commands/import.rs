@@ -187,6 +187,13 @@ pub async fn run(
             if let Some(target_app_id) = &target_app_id {
                 println!("    [*] Found target mapping App ID: {}", target_app_id);
             } else {
+                if map_file_exists {
+                    println!(
+                        "    [*] No target mapping found in environment '{}' for '{}'. Skipping import to prevent creation of a new app.",
+                        env, rel_path
+                    );
+                    continue;
+                }
                 println!("    [*] No target mapping. Importing as a new app.");
             }
 
