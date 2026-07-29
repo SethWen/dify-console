@@ -94,4 +94,23 @@ pub enum Commands {
         #[arg(short = 'P', long)]
         publish: bool,
     },
+
+    /// Replace DSL content based on environment mapping rules and save to output directory
+    Replace {
+        /// Directory containing DSL files to process
+        #[arg(short, long, default_value = "difydsl")]
+        dir: String,
+
+        /// Target environment name for mapping rules (e.g. dev, preview, production)
+        #[arg(short = 'E', long)]
+        env: String,
+
+        /// Optional explicit output directory (default: append -{env} to subdirectories)
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Path to the app ID mapping JSON file
+        #[arg(long, default_value = "difydsl/app_mapping.json")]
+        map_file: String,
+    },
 }

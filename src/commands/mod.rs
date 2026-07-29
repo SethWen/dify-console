@@ -1,5 +1,6 @@
 pub mod export;
 pub mod import;
+pub mod replace;
 
 use crate::cli::{Cli, Commands};
 
@@ -31,5 +32,11 @@ pub async fn run(cli: Cli) -> Result<(), String> {
             )
             .await
         }
+        Commands::Replace {
+            dir,
+            env,
+            output,
+            map_file,
+        } => replace::run(dir, env, output, map_file).await,
     }
 }
